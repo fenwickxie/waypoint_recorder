@@ -1,0 +1,29 @@
+<launch>
+  <!-- 航点文件持久化默认存储路径 -->
+  <arg name="waypoint_file" default="$(find waypoint_recorder)/saved_waypoints/waypoints.yaml" />
+  
+  <!-- 是否在新终端窗口中独立弹出交互控制台 (需要图形界面/gnome-terminal) -->
+  <arg name="launch_teleop_new_window" default="false" />
+
+  <!-- 核心管理与自动发布节点 -->
+  <node pkg="waypoint_recorder" type="waypoint_node" name="waypoint_node" output="screen">
+    <rosparam command="load" file="$(find waypoint_recorder)/config/params.yaml" />
+    <param name="storage/default_file_path" value="$(arg waypoint_file)" />
+  </node>
+
+  <!-- 专用终端交互控制台 (新窗口运行模式) -->
+  <group if="$(arg launch_teleop_new_window)">
+    <node pkg="waypoint_recorder" type="waypoint_teleop" name="waypoint_teleop" 
+          output="screen" launch-prefix="gnome-terminal -e">
+      <param name="default_file_path" value="$(arg waypoint_file)" />
+    </node>
+  </group>
+
+  <!-- 专用终端交互控制台 (当前终端内前台运行模式) -->
+  <group unless="$(arg launch_teleop_new_window)">
+    <node pkg="waypoint_recorder" type="waypoint_teleop" name="waypoint_teleop" 
+          output="screen" launch-prefix="bash -c 'sleep 1; $0 $@'">
+      <param name="default_file_path" value="$(arg waypoint_file)" />
+    </node>
+  </group>
+</launch>
