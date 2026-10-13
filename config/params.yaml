@@ -22,7 +22,7 @@ topics:
   # 速度控制 / 导航触发话题（std_msgs/Float32）
   speed_topic: "/speed"
   publish_speed: true
-  speed_value: 1.0
+  speed_value: 0.6
 
   # 坐标系名称，通常为 map 或 odom
   frame_id: "map"

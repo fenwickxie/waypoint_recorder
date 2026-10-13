@@ -38,7 +38,7 @@ private:
 class WaypointTeleop {
 public:
   WaypointTeleop(ros::NodeHandle& nh, ros::NodeHandle& pnh)
-      : nh_(nh), pnh_(pnh), last_status_("WAITING") {
+      : nh_(nh), pnh_(pnh), last_status_("WAITING"), awaiting_save_format_(false) {
     pnh_.param<std::string>("command_topic", command_topic_, "/waypoint_recorder/command");
     pnh_.param<std::string>("status_topic", status_topic_, "/waypoint_recorder/status");
     pnh_.param<std::string>("default_file_path", default_file_path_, "");
@@ -69,14 +69,14 @@ public:
     std::cout << "  [u] : 撤销上一个航点 (Undo last waypoint)\n";
     std::cout << "  [c] : 清空所有录制的航点 (Clear all waypoints)\n";
     std::cout << "  [t] : 开关提前发布顺滑切换 (Toggle smooth early-switch)\n";
-    std::cout << "  [w] : 保存航点序列到文件 (Write to disk)\n";
+    std::cout << "  [w] : 选择格式保存 (YAML / PLY / 全部)\n";
     std::cout << "  [l] : 从文件读取加载航点序列 (Load from disk)\n";
     std::cout << "  [i] : 打印当前状态信息 (Print status)\n";
     std::cout << "  [h] : 打印此帮助菜单 (Help)\n";
     std::cout << "  [q] : 退出交互控制台 (Quit)\n";
     std::cout << "===============================================================\n";
     std::cout << "默认保存/读取路径: " << (default_file_path_.empty() ? "系统默认" : default_file_path_) << "\n";
-    std::cout << "按键即刻生效，无需按回车。\n\n";
+    std::cout << "按键即刻生效，无需按回车；保存时按 y/p/a 选择 YAML/PLY/全部，x 取消。\n\n";
   }
 
   void run() {
@@ -88,6 +88,12 @@ public:
       char key = term.readKey();
 
       if (key != 0) {
+        if (awaiting_save_format_) {
+          handleSaveFormatKey(key);
+          rate.sleep();
+          continue;
+        }
+
         switch (key) {
           case 'r':
           case 'R':
@@ -121,8 +127,9 @@ public:
             break;
           case 'w':
           case 'W':
-            std::cout << ">> [SAVE] 保存航点到文件: " << default_file_path_ << "\n";
-            sendCommand("SAVE:" + default_file_path_);
+            std::cout << ">> 保存格式 [y] YAML / [p] PLY / [a] 全部 / [x] 取消: ";
+            std::cout.flush();
+            awaiting_save_format_ = true;
             break;
           case 'l':
           case 'L':
@@ -151,6 +158,35 @@ public:
   }
 
 private:
+  void handleSaveFormatKey(char key) {
+    awaiting_save_format_ = false;
+    switch (key) {
+      case 'y':
+      case 'Y':
+        std::cout << "YAML\n>> [SAVE] 保存航点为 YAML...\n";
+        sendCommand("SAVE_FORMAT:YAML");
+        break;
+      case 'p':
+      case 'P':
+        std::cout << "PLY\n>> [SAVE] 保存航点为 PLY...\n";
+        sendCommand("SAVE_FORMAT:PLY");
+        break;
+      case 'a':
+      case 'A':
+        std::cout << "全部格式\n>> [SAVE] 同时保存 YAML 和 PLY...\n";
+        sendCommand("SAVE_FORMAT:ALL");
+        break;
+      case 'x':
+      case 'X':
+      case 27:
+        std::cout << "取消保存。\n";
+        break;
+      default:
+        std::cout << "无效选择，已取消保存。\n";
+        break;
+    }
+  }
+
   ros::NodeHandle nh_;
   ros::NodeHandle pnh_;
   ros::Publisher pub_cmd_;
@@ -160,6 +196,7 @@ private:
   std::string status_topic_;
   std::string default_file_path_;
   std::string last_status_;
+  bool awaiting_save_format_;
 };
 
 int main(int argc, char** argv) {

@@ -196,6 +196,8 @@ private:
     } else if (cmd == "TOGGLE_EARLY_SWITCH") {
       enable_early_switch_ = !enable_early_switch_;
       ROS_INFO_STREAM("[WaypointNode] Early switch is now: " << (enable_early_switch_ ? "ENABLED" : "DISABLED"));
+    } else if (cmd.find("SAVE_FORMAT:") == 0) {
+      saveWaypointsInFormat(cmd.substr(12));
     } else if (cmd.find("SAVE:") == 0) {
       std::string path = cmd.substr(5);
       if (path.empty()) path = default_file_path_;
@@ -223,6 +225,33 @@ private:
     const Waypoint* wp = manager_.getWaypoint(count - 1);
     ROS_INFO("[WaypointNode] >>> Recorded Waypoint #%d: [X=%.2f, Y=%.2f, Z=%.2f, Yaw=%.2frad] (Total: %zu)",
              wp->id, wp->x, wp->y, wp->z, wp->yaw, count);
+  }
+
+  void saveWaypointsInFormat(const std::string& format) {
+    if (default_file_path_.empty()) {
+      ROS_ERROR("[WaypointNode] Cannot save by format: storage/default_file_path is empty.");
+      return;
+    }
+
+    std::string base_path = default_file_path_;
+    const size_t slash = base_path.find_last_of('/');
+    const size_t dot = base_path.find_last_of('.');
+    if (dot != std::string::npos && (slash == std::string::npos || dot > slash)) {
+      base_path.erase(dot);
+    }
+
+    bool saved = true;
+    if (format == "YAML" || format == "ALL") {
+      saved = manager_.saveToFile(base_path + ".yaml") && saved;
+    }
+    if (format == "PLY" || format == "ALL") {
+      saved = manager_.saveToFile(base_path + ".ply") && saved;
+    }
+    if (format != "YAML" && format != "PLY" && format != "ALL") {
+      ROS_WARN_STREAM("[WaypointNode] Unknown save format: " << format);
+    } else if (!saved) {
+      ROS_ERROR_STREAM("[WaypointNode] Failed to save waypoint file(s) for format " << format);
+    }
   }
 
   void startNavigation() {

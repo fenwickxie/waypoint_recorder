@@ -18,7 +18,8 @@
    - 同时支持发布 `geometry_msgs/PointStamped`（默认话题 `/way_point`，适配 `local_planner`）以及 `geometry_msgs/PoseStamped`（默认话题 `/move_base_simple/goal`，适配标准 ROS 导航系统）。
    - 仅依赖 ROS 标准消息类型，零私有依赖，修改 `config/params.yaml` 中的话题名即可直接移植到任何 ROS 1 机器人项目。
 5. **持久化保存与读取**：
-   - 录制的航点序列支持一键保存为 YAML 文件（`w` 键）并在下次启动时直接加载（`l` 键）。
+   - 按 `w` 后可选择保存为 YAML（`y`）、ASCII PLY（`p`）或同时保存两种格式（`a`），按 `x` 取消；读取仍根据文件扩展名自动识别。
+   - PLY 文件保存为 `x y z` 顶点列表，可直接作为 `waypoint_example` 的航点文件；PLY 不包含航向角和时间戳，加载时这两项设为 `0`。
 6. **RViz 状态反馈**：
    - 自动在 `/waypoint_recorder/markers` 话题发布航点标记（绿色圆球）、当前行驶目标高亮（黄色圆球）、航点编号悬浮文本及轨迹连线。
 
@@ -51,11 +52,19 @@ rosrun waypoint_recorder waypoint_teleop
 | **`u`** | **撤销上一个点** | 删除最近一次录制的航点 |
 | **`c`** | **清空全部航点** | 清空内存中所有航点及 RViz 显示 |
 | **`t`** | **顺滑提前发布开关** | 动态切换是否提前发布下一个目标点 |
-| **`w`** | **保存到文件** | 保存到 `saved_waypoints/waypoints.yaml` |
+| **`w`** | **选择格式保存** | 再按 `y` 保存 YAML、`p` 保存 PLY、`a` 保存两种格式，或按 `x` 取消 |
 | **`l`** | **从文件加载** | 从 `saved_waypoints/waypoints.yaml` 加载之前保存的路径 |
 | **`i`** | **打印当前状态** | 显示当前航点数、进行中航点和开关状态 |
 | **`h`** | **查看帮助** | 打印按键提示 |
 | **`q`** | **退出控制台** | 退出终端交互工具 |
+
+默认路径基名仍为 `saved_waypoints/waypoints`。保存时会在此基名上添加 `.yaml` 或 `.ply` 扩展名；选择全部时会同时生成两份文件。若需更改保存位置，可覆盖 launch 参数：
+
+```bash
+roslaunch waypoint_recorder waypoint_recorder.launch waypoint_file:=/path/to/my_waypoints.yaml
+```
+
+保存后可将该文件作为 `waypoint_example` 的 `waypoint_file_dir` 使用。加载时同样依据 `.yaml` 或 `.ply` 扩展名自动识别。
 
 ---
 
