@@ -7,6 +7,7 @@
     <param name="topics/publish_speed" value="false" />
     <param name="recording/distance_interval" value="1.0" />
     <param name="recording/time_interval" value="0.3" />
+    <param name="recording/record_start_point" value="true" />
   </node>
   <node pkg="waypoint_recorder" type="waypoint_node" name="recorder_invalid_test_node" output="screen">
     <param name="topics/odom_topic" value="/recording_invalid_test/odom" />
@@ -15,6 +16,17 @@
     <param name="topics/publish_speed" value="false" />
     <param name="recording/distance_interval" value="0.0" />
     <param name="recording/time_interval" value="-1.0" />
+  </node>
+  <node pkg="waypoint_recorder" type="waypoint_node" name="recorder_no_start_test_node" output="screen">
+    <param name="topics/odom_topic" value="/recording_no_start_test/odom" />
+    <param name="control/command_topic" value="/recording_no_start_test/command" />
+    <param name="control/status_topic" value="/recording_no_start_test/status" />
+    <param name="control/marker_topic" value="/recording_no_start_test/markers" />
+    <param name="topics/publish_point_goal" value="false" />
+    <param name="topics/publish_pose_goal" value="false" />
+    <param name="topics/publish_speed" value="false" />
+    <param name="recording/distance_interval" value="1.0" />
+    <param name="recording/time_interval" value="0.3" />
   </node>
   <test test-name="recording_test" pkg="waypoint_recorder" type="recording_test" time-limit="60" />
 </launch>

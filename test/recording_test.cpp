@@ -16,10 +16,10 @@
 class RecordingTest : public testing::Test {
 protected:
   void SetUp() override {
-    commands_ = nh_.advertise<std_msgs::String>("/recording_test/command", 10);
-    odometry_ = nh_.advertise<nav_msgs::Odometry>("/recording_test/odom", 10);
-    status_sub_ = nh_.subscribe("/recording_test/status", 10, &RecordingTest::statusCallback, this);
-    marker_sub_ = nh_.subscribe("/recording_test/markers", 10, &RecordingTest::markerCallback, this);
+    commands_ = nh_.advertise<std_msgs::String>(topic_prefix_ + "/command", 10);
+    odometry_ = nh_.advertise<nav_msgs::Odometry>(topic_prefix_ + "/odom", 10);
+    status_sub_ = nh_.subscribe(topic_prefix_ + "/status", 10, &RecordingTest::statusCallback, this);
+    marker_sub_ = nh_.subscribe(topic_prefix_ + "/markers", 10, &RecordingTest::markerCallback, this);
     ASSERT_TRUE(waitFor([&] {
       return commands_.getNumSubscribers() > 0 && odometry_.getNumSubscribers() > 0 &&
              !status_.empty();
@@ -87,6 +87,7 @@ protected:
   ros::NodeHandle nh_;
   ros::Publisher commands_, odometry_;
   ros::Subscriber status_sub_, marker_sub_;
+  std::string topic_prefix_ = "/recording_test";
   std::string status_;
   std::string temporary_file_;
   std::vector<geometry_msgs::Point> points_;
@@ -267,6 +268,83 @@ TEST_F(RecordingTest, FinalPosePersistsWithYawAndTimestamp) {
   EXPECT_DOUBLE_EQ(0.3, endpoint->z);
   EXPECT_DOUBLE_EQ(0.75, endpoint->yaw);
   EXPECT_NEAR(ros::Time::now().toSec(), endpoint->stamp, 2.0);
+}
+
+class RecordingWithoutStartTest : public RecordingTest {
+protected:
+  void SetUp() override {
+    topic_prefix_ = "/recording_no_start_test";
+    RecordingTest::SetUp();
+  }
+};
+
+TEST_F(RecordingWithoutStartTest, DistanceStartsCountingWithoutRecordingInitialPose) {
+  pose(10.0);
+  command("RECORD_DISTANCE");
+  ASSERT_TRUE(expectCount(0));
+  EXPECT_NE(std::string::npos, status_.find("|RECORDING:DISTANCE"));
+  pose(10.5);
+  EXPECT_TRUE(expectCount(0));
+  command("RECORD_DISTANCE");
+  command("RECORD_TIME");
+  pose(11.0);
+  ASSERT_TRUE(expectCount(1));
+  EXPECT_DOUBLE_EQ(11.0, points_.front().x);
+  pose(11.2);
+  command("STOP_RECORDING");
+  ASSERT_TRUE(expectCount(2));
+  EXPECT_DOUBLE_EQ(11.2, points_.back().x);
+}
+
+TEST_F(RecordingWithoutStartTest, TimeWaitsForIntervalAndStillRecordsEndpoint) {
+  pose(0.0);
+  command("RECORD_TIME");
+  ASSERT_TRUE(expectCount(0));
+  pose(0.0);
+  EXPECT_TRUE(expectCount(0));
+  settle(0.31);
+  EXPECT_TRUE(expectCount(0));
+  pose(0.1);
+  ASSERT_TRUE(expectCount(1));
+  EXPECT_DOUBLE_EQ(0.1, points_.front().x);
+  pose(0.2);
+  command("STOP_RECORDING");
+  ASSERT_TRUE(expectCount(2));
+  EXPECT_DOUBLE_EQ(0.2, points_.back().x);
+}
+
+TEST_F(RecordingWithoutStartTest, ImmediateStopRecordsEndpointInBothModes) {
+  pose(0.0);
+  command("RECORD_DISTANCE");
+  EXPECT_TRUE(expectCount(0));
+  command("STOP_RECORDING");
+  EXPECT_TRUE(expectCount(1));
+  command("RECORD_TIME");
+  EXPECT_TRUE(expectCount(1));
+  command("STOP_RECORDING");
+  EXPECT_TRUE(expectCount(2));
+  command("STOP_RECORDING");
+  EXPECT_TRUE(expectCount(2));
+}
+
+TEST_F(RecordingWithoutStartTest, RestartResetsDistanceAndManualRecordingStillWorks) {
+  pose(0.0);
+  command("RECORD");
+  command("RECORD_DISTANCE");
+  pose(0.5);
+  EXPECT_TRUE(expectCount(1));
+  command("STOP_RECORDING");
+  EXPECT_TRUE(expectCount(2));
+  command("RECORD_DISTANCE");
+  pose(1.0);
+  EXPECT_TRUE(expectCount(2));
+  command("RECORD");
+  EXPECT_TRUE(expectCount(3));
+  pose(1.5);
+  ASSERT_TRUE(expectCount(4));
+  EXPECT_DOUBLE_EQ(1.5, points_.back().x);
+  command("STOP_RECORDING");
+  EXPECT_TRUE(expectCount(5));
 }
 
 int main(int argc, char** argv) {

@@ -148,6 +148,7 @@ private:
 
     pnh_.param<double>("recording/distance_interval", distance_interval_, 1.0);
     pnh_.param<double>("recording/time_interval", time_interval_, 1.0);
+    pnh_.param<bool>("recording/record_start_point", record_start_point_, false);
 
     pnh_.param<std::string>("control/command_topic", command_topic_, "/waypoint_recorder/command");
     pnh_.param<std::string>("control/status_topic", status_topic_, "/waypoint_recorder/status");
@@ -273,9 +274,12 @@ private:
     recording_mode_ = mode;
     recording_distance_ = 0.0;
     recording_time_ = ros::Time::now();
-    recordCurrentPose();
-    ROS_INFO("[WaypointNode] Automatic recording started: %s, interval %.3f %s.",
-             recordingModeName(), interval, mode == RecordingMode::DISTANCE ? "m" : "s");
+    if (record_start_point_) {
+      recordCurrentPose();
+    }
+    ROS_INFO("[WaypointNode] Automatic recording started: %s, interval %.3f %s, record start point: %s.",
+             recordingModeName(), interval, mode == RecordingMode::DISTANCE ? "m" : "s",
+             record_start_point_ ? "ON" : "OFF");
   }
 
   void updateRecording() {
@@ -591,6 +595,7 @@ private:
   ros::Time recording_time_;
   double distance_interval_;
   double time_interval_;
+  bool record_start_point_;
 
   // 参数
   std::string odom_topic_;
