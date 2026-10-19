@@ -16,14 +16,14 @@
    - 最后一个终点目标仍会以严格到达阈值执行，并支持在终端按 `t` 键随时开启/关闭此功能。
 4. **双目标格式接口兼容与高度解耦**：
    - 同时支持发布 `geometry_msgs/PointStamped`（默认话题 `/way_point`，适配 `local_planner`）以及 `geometry_msgs/PoseStamped`（默认话题 `/move_base_simple/goal`，适配标准 ROS 导航系统）。
-   - 仅依赖 ROS 标准消息类型，零私有依赖，修改 `config/params.yaml` 中的话题名即可直接移植到任何 ROS 1 机器人项目。
+   - 仅依赖 ROS 标准消息类型，零私有依赖，修改 [launch/waypoint_recorder.launch](launch/waypoint_recorder.launch) 中的话题参数或启动时覆盖即可移植到其他 ROS 1 项目。
 5. **持久化保存与读取**：
    - 按 `w` 后可选择保存为 YAML（`y`）、ASCII PLY（`p`）或同时保存两种格式（`a`），按 `x` 取消；读取仍根据文件扩展名自动识别。
    - PLY 文件保存为 `x y z` 顶点列表，可直接作为 `waypoint_example` 的航点文件；PLY 不包含航向角和时间戳，加载时这两项设为 `0`。
 6. **RViz 状态反馈**：
    - 自动在 `/waypoint_recorder/markers` 话题发布航点标记（绿色圆球）、当前行驶目标高亮（黄色圆球）、航点编号悬浮文本及轨迹连线。
 7. **按距离或时间自动录制**：
-   - `d` 开始按累计三维行驶路程录制，`f` 开始按时间间隔录制，间隔可在 [config/params.yaml](config/params.yaml) 中配置。
+   - `d` 开始按累计三维行驶路程录制，`f` 开始按时间间隔录制，间隔由 launch 参数 `distance_interval` 和 `time_interval` 配置。
    - 是否在开始时立即记录起点由 `recording/record_start_point` 控制（默认 `false`）；`e` 结束时仍无条件追加最新里程计位姿作为终点，即使距离/时间不足一个间隔，或终点与上一点重合也会记录。
 
 ---
@@ -74,9 +74,9 @@ roslaunch waypoint_recorder waypoint_recorder.launch waypoint_file:=/path/to/my_
 
 ### 4. 自动录制说明
 
-编辑 `recording/distance_interval`（米）或 `recording/time_interval`（秒）后重启节点生效，均必须为有限正数，否则对应模式拒绝启动并输出错误。
+修改 launch 参数 `distance_interval`（米）或 `time_interval`（秒）后重新启动生效，均必须为有限正数，否则对应模式拒绝启动并输出错误。它们分别写入节点私有参数 `recording/distance_interval` 和 `recording/time_interval`。
 
-`recording/record_start_point` 为布尔配置，修改后重启节点生效，同时适用于距离和时间模式。默认 `false`：开始时不录点，但立即从启动位姿/时刻开始累计，在达到首个距离/时间间隔且收到新里程计时才录制第一个点；设为 `true` 则恢复开始时立即记录起点。无论是否录制起点，结束时都会补录终点，即使开始后立即结束也会留下一个终点。此选项不影响手动 `r` 录点，也不改变导航从列表第一个航点开始的行为。
+launch 参数 `record_start_point` 写入布尔配置 `recording/record_start_point`，修改后重新启动生效，同时适用于距离和时间模式。默认 `false`：开始时不录点，但立即从启动位姿/时刻开始累计，在达到首个距离/时间间隔且收到新里程计时才录制第一个点；设为 `true` 则恢复开始时立即记录起点。无论是否录制起点，结束时都会补录终点，即使开始后立即结束也会留下一个终点。此选项不影响手动 `r` 录点，也不改变导航从列表第一个航点开始的行为。
 
 - **距离模式**：累计每两帧有效里程计之间的三维欧氏距离，支持转弯、往返和高度变化，不是计算到上一个录制点的直线距离。
 - **时间模式**：使用 ROS 时间（支持 `/use_sim_time`），新里程计到达且间隔满足时记录最新位姿。静止时也会按时间录点；没有新里程计时不重复录制旧数据。ROS 时间回退时重置计时基准并输出警告。
@@ -97,33 +97,49 @@ rostopic pub -1 /waypoint_recorder/command std_msgs/String "data: 'STOP_RECORDIN
 
 ---
 
-## 参数配置说明 (`config/params.yaml`)
+## 参数配置说明
 
-```yaml
-topics:
-  odom_topic: "/state_estimation"        # 里程计话题
-  point_goal_topic: "/way_point"         # PointStamped 目标话题
-  publish_point_goal: true               # 是否发布 PointStamped
-  pose_goal_topic: "/move_base_simple/goal" # PoseStamped 目标话题
-  publish_pose_goal: true                # 是否发布 PoseStamped
-  speed_topic: "/speed"                  # 自主运行速度触发话题
-  publish_speed: true
-  speed_value: 1.0
-  frame_id: "map"                        # 坐标系名称
+所有启动配置集中在 [launch/waypoint_recorder.launch](launch/waypoint_recorder.launch)，不再加载外部配置 YAML。可以编辑 `<arg default="...">`，也可以在启动时通过 `参数名:=值` 覆盖：
 
-recording:
-  record_start_point: false              # 是否在开始时立即录制起点，两种模式共用
-  distance_interval: 1.0                 # 累计三维行驶距离间隔 (m)，有限正数
-  time_interval: 1.0                     # ROS 时间采样间隔 (s)，有限正数
+```bash
+roslaunch waypoint_recorder waypoint_recorder.launch \
+  odom_topic:=/odom \
+  distance_interval:=5.0 \
+  time_interval:=2.0 \
+  record_start_point:=false
+```
 
-navigation:
-  arrival_radius: 0.5                    # 最终到达判定半径 (m)
-  z_bound: 2.0                           # 垂直容差 (m)
-  enable_early_switch: true              # 是否开启提前发布顺滑切换
-  early_switch_radius: 1.2               # 提前发布下一个航点的距离阈值 (m)
-  wait_time: 0.0                         # 到达后停顿等待时间 (s)
-  loop_navigation: false                 # 是否循环巡航
-  control_rate: 20.0                     # 控制循环频率 (Hz)
+| launch 参数 | 默认值 | 说明 |
+| :--- | :--- | :--- |
+| `odom_topic` | `/odin1/odometry` | 里程计输入 |
+| `point_goal_topic` / `publish_point_goal` | `/way_point` / `true` | PointStamped 目标话题及发布开关 |
+| `pose_goal_topic` / `publish_pose_goal` | `/move_base_simple/goal` / `true` | PoseStamped 目标话题及发布开关 |
+| `speed_topic` / `publish_speed` | `/speed` / `true` | 速度话题及发布开关 |
+| `speed_value` | `2.0` | 发布的速度值 |
+| `frame_id` | `map` | 坐标系 |
+| `record_start_point` | `false` | 是否立即记录起点 |
+| `distance_interval` / `time_interval` | `3.0` / `3.0` | 自动录制间隔（米 / 秒） |
+| `arrival_radius` / `z_bound` | `0.5` / `2.0` | 水平到达半径 / 垂直容差（米） |
+| `enable_early_switch` | `false` | 是否提前切换目标 |
+| `early_switch_radius` | `1.2` | 提前切换半径（米），应大于到达半径 |
+| `wait_time` | `0.0` | 到达后等待时间（秒） |
+| `loop_navigation` | `false` | 是否循环导航 |
+| `control_rate` | `20.0` | 控制循环频率（Hz） |
+| `command_topic` | `/waypoint_recorder/command` | 核心节点与控制台共用命令话题 |
+| `status_topic` | `/waypoint_recorder/status` | 核心节点与控制台共用状态话题 |
+| `marker_topic` | `/waypoint_recorder/markers` | RViz 标记话题 |
+| `waypoint_file` | 包目录下 `saved_waypoints/waypoints.yaml` | 核心节点与控制台共用存储路径 |
+| `launch_teleop_new_window` | `false` | 是否在新终端启动控制台 |
+
+迁移保留了原有生效默认值及节点私有参数层级（`topics/*`、`recording/*`、`navigation/*`、`control/*`、`storage/*`），无需修改 C++ 参数读取代码。启动参数使用上表中的短名称，例如 `distance_interval:=5.0`，而不是 `recording/distance_interval:=5.0`。
+
+通过 launch 启动时，修改 `command_topic` 或 `status_topic` 会同步应用于核心节点和两种启动模式下的控制台。若单独使用 `rosrun` 启动控制台，需要自行传入对应的私有参数，例如：
+
+```bash
+rosrun waypoint_recorder waypoint_teleop \
+  _command_topic:=/my_recorder/command \
+  _status_topic:=/my_recorder/status \
+  _default_file_path:=/path/to/my_waypoints.yaml
 ```
 
 ## 测试

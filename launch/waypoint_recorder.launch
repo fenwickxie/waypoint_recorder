@@ -1,4 +1,34 @@
 <launch>
+  <!-- 话题与坐标系 -->
+  <arg name="odom_topic" default="/odin1/odometry" />
+  <arg name="point_goal_topic" default="/way_point" />
+  <arg name="publish_point_goal" default="true" />
+  <arg name="pose_goal_topic" default="/move_base_simple/goal" />
+  <arg name="publish_pose_goal" default="true" />
+  <arg name="speed_topic" default="/speed" />
+  <arg name="publish_speed" default="true" />
+  <arg name="speed_value" default="2.0" />
+  <arg name="frame_id" default="map" />
+
+  <!-- 自动录制：间隔必须为有限正数，结束时始终补录终点 -->
+  <arg name="record_start_point" default="false" />
+  <arg name="distance_interval" default="3.0" /> <!-- 累计三维路程，米 -->
+  <arg name="time_interval" default="3.0" /> <!-- ROS 时间，秒 -->
+
+  <!-- 导航与到达判定 -->
+  <arg name="arrival_radius" default="0.5" /> <!-- 水平到达半径，米 -->
+  <arg name="z_bound" default="2.0" /> <!-- 垂直容差，米 -->
+  <arg name="enable_early_switch" default="false" />
+  <arg name="early_switch_radius" default="1.2" /> <!-- 提前切换半径，需大于 arrival_radius -->
+  <arg name="wait_time" default="0.0" /> <!-- 到达后等待，秒 -->
+  <arg name="loop_navigation" default="false" />
+  <arg name="control_rate" default="20.0" /> <!-- 主循环频率，Hz -->
+
+  <!-- 核心节点与交互控制台共用通信话题 -->
+  <arg name="command_topic" default="/waypoint_recorder/command" />
+  <arg name="status_topic" default="/waypoint_recorder/status" />
+  <arg name="marker_topic" default="/waypoint_recorder/markers" />
+
   <!-- 航点文件持久化默认存储路径 -->
   <arg name="waypoint_file" default="$(find waypoint_recorder)/saved_waypoints/waypoints.yaml" />
   
@@ -7,15 +37,41 @@
 
   <!-- 核心管理与自动发布节点 -->
   <node pkg="waypoint_recorder" type="waypoint_node" name="waypoint_node" output="screen">
-    <rosparam command="load" file="$(find waypoint_recorder)/config/params.yaml" />
-    <param name="storage/default_file_path" value="$(arg waypoint_file)" />
+    <param name="topics/odom_topic" type="str" value="$(arg odom_topic)" />
+    <param name="topics/point_goal_topic" type="str" value="$(arg point_goal_topic)" />
+    <param name="topics/publish_point_goal" type="bool" value="$(arg publish_point_goal)" />
+    <param name="topics/pose_goal_topic" type="str" value="$(arg pose_goal_topic)" />
+    <param name="topics/publish_pose_goal" type="bool" value="$(arg publish_pose_goal)" />
+    <param name="topics/speed_topic" type="str" value="$(arg speed_topic)" />
+    <param name="topics/publish_speed" type="bool" value="$(arg publish_speed)" />
+    <param name="topics/speed_value" type="double" value="$(arg speed_value)" />
+    <param name="topics/frame_id" type="str" value="$(arg frame_id)" />
+
+    <param name="recording/record_start_point" type="bool" value="$(arg record_start_point)" />
+    <param name="recording/distance_interval" type="double" value="$(arg distance_interval)" />
+    <param name="recording/time_interval" type="double" value="$(arg time_interval)" />
+
+    <param name="navigation/arrival_radius" type="double" value="$(arg arrival_radius)" />
+    <param name="navigation/z_bound" type="double" value="$(arg z_bound)" />
+    <param name="navigation/enable_early_switch" type="bool" value="$(arg enable_early_switch)" />
+    <param name="navigation/early_switch_radius" type="double" value="$(arg early_switch_radius)" />
+    <param name="navigation/wait_time" type="double" value="$(arg wait_time)" />
+    <param name="navigation/loop_navigation" type="bool" value="$(arg loop_navigation)" />
+    <param name="navigation/control_rate" type="double" value="$(arg control_rate)" />
+
+    <param name="control/command_topic" type="str" value="$(arg command_topic)" />
+    <param name="control/status_topic" type="str" value="$(arg status_topic)" />
+    <param name="control/marker_topic" type="str" value="$(arg marker_topic)" />
+    <param name="storage/default_file_path" type="str" value="$(arg waypoint_file)" />
   </node>
 
   <!-- 专用终端交互控制台 (新窗口运行模式) -->
   <group if="$(arg launch_teleop_new_window)">
     <node pkg="waypoint_recorder" type="waypoint_teleop" name="waypoint_teleop" 
           output="screen" launch-prefix="gnome-terminal -e">
-      <param name="default_file_path" value="$(arg waypoint_file)" />
+      <param name="command_topic" type="str" value="$(arg command_topic)" />
+      <param name="status_topic" type="str" value="$(arg status_topic)" />
+      <param name="default_file_path" type="str" value="$(arg waypoint_file)" />
     </node>
   </group>
 
@@ -23,7 +79,9 @@
   <group unless="$(arg launch_teleop_new_window)">
     <node pkg="waypoint_recorder" type="waypoint_teleop" name="waypoint_teleop" 
           output="screen" launch-prefix="bash -c 'sleep 1; $0 $@'">
-      <param name="default_file_path" value="$(arg waypoint_file)" />
+      <param name="command_topic" type="str" value="$(arg command_topic)" />
+      <param name="status_topic" type="str" value="$(arg status_topic)" />
+      <param name="default_file_path" type="str" value="$(arg waypoint_file)" />
     </node>
   </group>
 </launch>
