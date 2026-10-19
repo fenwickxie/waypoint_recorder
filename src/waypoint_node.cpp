@@ -146,6 +146,9 @@ private:
     pnh_.param<bool>("navigation/loop_navigation", loop_navigation_, false);
     pnh_.param<double>("navigation/control_rate", control_rate_, 20.0);
 
+    pnh_.param<double>("recording/distance_interval", distance_interval_, 1.0);
+    pnh_.param<double>("recording/time_interval", time_interval_, 1.0);
+
     pnh_.param<std::string>("control/command_topic", command_topic_, "/waypoint_recorder/command");
     pnh_.param<std::string>("control/status_topic", status_topic_, "/waypoint_recorder/status");
     pnh_.param<std::string>("control/marker_topic", marker_topic_, "/waypoint_recorder/markers");
@@ -171,12 +174,26 @@ private:
   }
 
   void odomCallback(const nav_msgs::Odometry::ConstPtr& msg) {
+    const auto& position = msg->pose.pose.position;
+    const double yaw = tf::getYaw(msg->pose.pose.orientation);
+    if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
+        !std::isfinite(position.z) || !std::isfinite(yaw)) {
+      ROS_WARN_THROTTLE(2.0, "[WaypointNode] Ignoring non-finite odometry pose.");
+      return;
+    }
+    if (recording_mode_ == RecordingMode::DISTANCE) {
+      const double dx = position.x - vehicle_x_;
+      const double dy = position.y - vehicle_y_;
+      const double dz = position.z - vehicle_z_;
+      recording_distance_ += std::hypot(std::hypot(dx, dy), dz);
+    }
     has_odom_ = true;
     last_odom_time_ = msg->header.stamp.toSec();
     vehicle_x_ = msg->pose.pose.position.x;
     vehicle_y_ = msg->pose.pose.position.y;
     vehicle_z_ = msg->pose.pose.position.z;
-    vehicle_yaw_ = tf::getYaw(msg->pose.pose.orientation);
+    vehicle_yaw_ = yaw;
+    updateRecording();
   }
 
   void commandCallback(const std_msgs::String::ConstPtr& msg) {
@@ -185,6 +202,12 @@ private:
 
     if (cmd == "RECORD") {
       recordCurrentPose();
+    } else if (cmd == "RECORD_DISTANCE") {
+      startRecording(RecordingMode::DISTANCE);
+    } else if (cmd == "RECORD_TIME") {
+      startRecording(RecordingMode::TIME);
+    } else if (cmd == "STOP_RECORDING") {
+      stopRecording();
     } else if (cmd == "START" || cmd == "PLAY") {
       startNavigation();
     } else if (cmd == "STOP" || cmd == "PAUSE") {
@@ -203,6 +226,10 @@ private:
       if (path.empty()) path = default_file_path_;
       manager_.saveToFile(path);
     } else if (cmd.find("LOAD:") == 0) {
+      if (recording_mode_ != RecordingMode::OFF) {
+        ROS_WARN("[WaypointNode] Stop recording before loading waypoints.");
+        return;
+      }
       std::string path = cmd.substr(5);
       if (path.empty()) path = default_file_path_;
       if (manager_.loadFromFile(path)) {
@@ -212,6 +239,72 @@ private:
     } else {
       ROS_WARN_STREAM("[WaypointNode] Unknown command received: " << cmd);
     }
+  }
+
+  enum class RecordingMode { OFF, DISTANCE, TIME };
+
+  const char* recordingModeName() const {
+    switch (recording_mode_) {
+      case RecordingMode::DISTANCE: return "DISTANCE";
+      case RecordingMode::TIME: return "TIME";
+      default: return "OFF";
+    }
+  }
+
+  void startRecording(RecordingMode mode) {
+    if (recording_mode_ != RecordingMode::OFF) {
+      ROS_WARN("[WaypointNode] Recording already active. Stop it before starting another session.");
+      return;
+    }
+    if (state_ == NavState::NAVIGATING) {
+      ROS_WARN("[WaypointNode] Pause navigation before starting automatic recording.");
+      return;
+    }
+    if (!has_odom_) {
+      ROS_WARN("[WaypointNode] Cannot start recording: No odometry received yet!");
+      return;
+    }
+    const double interval = mode == RecordingMode::DISTANCE ? distance_interval_ : time_interval_;
+    if (!std::isfinite(interval) || interval <= 0.0) {
+      ROS_ERROR("[WaypointNode] Cannot start recording: recording/%s_interval must be finite and positive.",
+                mode == RecordingMode::DISTANCE ? "distance" : "time");
+      return;
+    }
+    recording_mode_ = mode;
+    recording_distance_ = 0.0;
+    recording_time_ = ros::Time::now();
+    recordCurrentPose();
+    ROS_INFO("[WaypointNode] Automatic recording started: %s, interval %.3f %s.",
+             recordingModeName(), interval, mode == RecordingMode::DISTANCE ? "m" : "s");
+  }
+
+  void updateRecording() {
+    if (recording_mode_ == RecordingMode::OFF) {
+      return;
+    }
+    const ros::Time now = ros::Time::now();
+    if (now < recording_time_) {
+      ROS_WARN("[WaypointNode] ROS time moved backwards; resetting recording time baseline.");
+      recording_time_ = now;
+    }
+    const bool due = recording_mode_ == RecordingMode::DISTANCE
+        ? recording_distance_ >= distance_interval_
+        : (now - recording_time_).toSec() >= time_interval_;
+    if (due) {
+      recordCurrentPose();
+      recording_distance_ = 0.0;
+      recording_time_ = now;
+    }
+  }
+
+  void stopRecording() {
+    if (recording_mode_ == RecordingMode::OFF) {
+      ROS_WARN("[WaypointNode] No automatic recording session to stop.");
+      return;
+    }
+    recordCurrentPose();
+    recording_mode_ = RecordingMode::OFF;
+    ROS_INFO("[WaypointNode] Automatic recording stopped; final pose recorded. Use SAVE to persist waypoints.");
   }
 
   void recordCurrentPose() {
@@ -255,6 +348,10 @@ private:
   }
 
   void startNavigation() {
+    if (recording_mode_ != RecordingMode::OFF) {
+      ROS_WARN("[WaypointNode] Stop recording before starting navigation.");
+      return;
+    }
     if (manager_.empty()) {
       ROS_WARN("[WaypointNode] Cannot start navigation: Waypoint list is empty!");
       return;
@@ -275,6 +372,10 @@ private:
   }
 
   void clearWaypoints() {
+    if (recording_mode_ != RecordingMode::OFF) {
+      ROS_WARN("[WaypointNode] Stop recording before clearing waypoints.");
+      return;
+    }
     state_ = NavState::IDLE;
     current_idx_ = 0;
     is_waiting_ = false;
@@ -283,6 +384,10 @@ private:
   }
 
   void undoWaypoint() {
+    if (recording_mode_ != RecordingMode::OFF) {
+      ROS_WARN("[WaypointNode] Stop recording before undoing waypoints.");
+      return;
+    }
     if (manager_.undoLastWaypoint()) {
       if (current_idx_ >= manager_.size() && current_idx_ > 0) {
         current_idx_ = manager_.size() - 1;
@@ -446,6 +551,7 @@ private:
        << "|COUNT:" << manager_.size()
        << "|CURRENT:" << (manager_.empty() ? 0 : current_idx_ + 1)
        << "|EARLY_SWITCH:" << (enable_early_switch_ ? "ON" : "OFF")
+       << "|RECORDING:" << recordingModeName()
        << "|ODOM:" << (has_odom_ ? "OK" : "NO");
     std_msgs::String msg;
     msg.data = ss.str();
@@ -479,6 +585,12 @@ private:
   double vehicle_z_;
   double vehicle_yaw_;
   double last_odom_time_;
+
+  RecordingMode recording_mode_ = RecordingMode::OFF;
+  double recording_distance_ = 0.0;
+  ros::Time recording_time_;
+  double distance_interval_;
+  double time_interval_;
 
   // 参数
   std::string odom_topic_;

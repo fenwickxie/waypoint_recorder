@@ -31,3 +31,10 @@ add_executable(waypoint_teleop src/waypoint_teleop.cpp)
 target_link_libraries(waypoint_teleop
   ${catkin_LIBRARIES}
 )
+
+if(CATKIN_ENABLE_TESTING)
+  find_package(rostest REQUIRED)
+  add_rostest_gtest(recording_test test/recording.test test/recording_test.cpp)
+  target_link_libraries(recording_test ${catkin_LIBRARIES})
+  add_dependencies(recording_test waypoint_node)
+endif()

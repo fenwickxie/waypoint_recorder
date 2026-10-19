@@ -64,6 +64,9 @@ public:
     std::cout << "          WAYPOINT RECORDER & AUTO-PUBLISHER TELEOP            \n";
     std::cout << "===============================================================\n";
     std::cout << "  [r] : 录制当前位置作为航点 (Record current waypoint)\n";
+    std::cout << "  [d] : 开始按行驶距离自动录制 (Record by distance)\n";
+    std::cout << "  [f] : 开始按时间间隔自动录制 (Record by time)\n";
+    std::cout << "  [e] : 结束自动录制并补录终点 (End recording)\n";
     std::cout << "  [p] : 开始自动连续发布航点 (Play / Start navigation)\n";
     std::cout << "  [s] : 暂停/停止当前自动发布 (Stop / Pause navigation)\n";
     std::cout << "  [u] : 撤销上一个航点 (Undo last waypoint)\n";
@@ -104,6 +107,21 @@ public:
           case 'P':
             std::cout << ">> [START] 开始自动连续发布目标点...\n";
             sendCommand("START");
+            break;
+          case 'd':
+          case 'D':
+            std::cout << ">> [RECORD_DISTANCE] 开始按距离自动录制...\n";
+            sendCommand("RECORD_DISTANCE");
+            break;
+          case 'f':
+          case 'F':
+            std::cout << ">> [RECORD_TIME] 开始按时间自动录制...\n";
+            sendCommand("RECORD_TIME");
+            break;
+          case 'e':
+          case 'E':
+            std::cout << ">> [STOP_RECORDING] 结束自动录制并补录终点...\n";
+            sendCommand("STOP_RECORDING");
             break;
           case 's':
           case 'S':

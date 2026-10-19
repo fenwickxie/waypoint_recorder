@@ -22,6 +22,9 @@
    - PLY 文件保存为 `x y z` 顶点列表，可直接作为 `waypoint_example` 的航点文件；PLY 不包含航向角和时间戳，加载时这两项设为 `0`。
 6. **RViz 状态反馈**：
    - 自动在 `/waypoint_recorder/markers` 话题发布航点标记（绿色圆球）、当前行驶目标高亮（黄色圆球）、航点编号悬浮文本及轨迹连线。
+7. **按距离或时间自动录制**：
+   - `d` 开始按累计三维行驶路程录制，`f` 开始按时间间隔录制，间隔可在 [config/params.yaml](config/params.yaml) 中配置。
+   - 开始立即记录起点；`e` 结束时无条件追加最新里程计位姿作为终点，即使距离/时间不足一个间隔，或终点与上一点重合也会记录。
 
 ---
 
@@ -47,6 +50,9 @@ rosrun waypoint_recorder waypoint_teleop
 | 按键 | 功能 | 说明 |
 | :---: | :--- | :--- |
 | **`r`** | **录制当前航点** | 记录当前位姿，RViz 会实时显示新航点和编号 |
+| **`d`** | **按距离自动录制** | 立即记录起点，之后每累计指定三维路程记录一次 |
+| **`f`** | **按时间自动录制** | 立即记录起点，之后每经过指定时间记录一次 |
+| **`e`** | **结束自动录制** | 补录最新位姿作为终点；再按 `w` 保存到文件 |
 | **`p`** | **开始连续发布** | 自动从第 1 个点开始按顺序发布导航目标 |
 | **`s`** | **暂停/停止发布** | 暂停当前自动导航 |
 | **`u`** | **撤销上一个点** | 删除最近一次录制的航点 |
@@ -66,6 +72,27 @@ roslaunch waypoint_recorder waypoint_recorder.launch waypoint_file:=/path/to/my_
 
 保存后可将该文件作为 `waypoint_example` 的 `waypoint_file_dir` 使用。加载时同样依据 `.yaml` 或 `.ply` 扩展名自动识别。
 
+### 4. 自动录制说明
+
+编辑 `recording/distance_interval`（米）或 `recording/time_interval`（秒）后重启节点生效，均必须为有限正数，否则对应模式拒绝启动并输出错误。
+
+- **距离模式**：累计每两帧有效里程计之间的三维欧氏距离，支持转弯、往返和高度变化，不是计算到上一个录制点的直线距离。
+- **时间模式**：使用 ROS 时间（支持 `/use_sim_time`），新里程计到达且间隔满足时记录最新位姿。静止时也会按时间录点；没有新里程计时不重复录制旧数据。ROS 时间回退时重置计时基准并输出警告。
+- 两种模式互斥，重复开始不会重复记录起点或重置进度。每次自动采样后从实际录制时刻/位置重新累计；单帧跨过多个间隔只记录该帧一次，不插值或补造中间点。因此采样精度受里程计频率影响。
+- 必须先收到有效里程计才能开始；结束时记录的是**最新收到**的有效位姿，不是预测位置。需要保证停止命令发送前终点里程计已送达。
+- 自动录制追加到已有列表，不自动清空；`r` 仍可补录单点且不重置自动采样进度。
+- 自动录制期间拒绝导航开始、清空、撤销和加载，需先按 `e`；导航运行期间需先按 `s` 暂停才能开始自动录制。原有 `s`/`STOP` 仍只暂停导航，不结束录制。
+- `e` 只结束录制并补点，不写磁盘；结束后按 `w` 保存完整路径。录制期间保存仅保存当时的快照。退出控制台不会自动结束录制。
+- 状态消息新增 `RECORDING:OFF|DISTANCE|TIME` 字段（实际为三选一的值），可按 `i` 查看。
+
+也可直接发布 `std_msgs/String` 命令到 `/waypoint_recorder/command`：
+
+```bash
+rostopic pub -1 /waypoint_recorder/command std_msgs/String "data: 'RECORD_DISTANCE'"
+# 或使用 RECORD_TIME 开始按时间录制
+rostopic pub -1 /waypoint_recorder/command std_msgs/String "data: 'STOP_RECORDING'"
+```
+
 ---
 
 ## 参数配置说明 (`config/params.yaml`)
@@ -82,6 +109,10 @@ topics:
   speed_value: 1.0
   frame_id: "map"                        # 坐标系名称
 
+recording:
+  distance_interval: 1.0                 # 累计三维行驶距离间隔 (m)，有限正数
+  time_interval: 1.0                     # ROS 时间采样间隔 (s)，有限正数
+
 navigation:
   arrival_radius: 0.5                    # 最终到达判定半径 (m)
   z_bound: 2.0                           # 垂直容差 (m)
@@ -90,4 +121,13 @@ navigation:
   wait_time: 0.0                         # 到达后停顿等待时间 (s)
   loop_navigation: false                 # 是否循环巡航
   control_rate: 20.0                     # 控制循环频率 (Hz)
+```
+
+## 测试
+
+在 ROS 1 catkin 工作空间中编译后运行：
+
+```bash
+catkin_make run_tests_waypoint_recorder
+catkin_test_results
 ```

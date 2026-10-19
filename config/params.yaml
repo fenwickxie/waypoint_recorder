@@ -27,6 +27,13 @@ topics:
   # 坐标系名称，通常为 map 或 odom
   frame_id: "map"
 
+# 自动录制参数（d 按距离开始，f 按时间开始，e 结束并补录终点）
+recording:
+  # 累计相邻里程计三维路程达到此值时录制，必须为有限正数（米）
+  distance_interval: 1.0
+  # ROS 时间间隔，收到新里程计且达到此值时录制，必须为有限正数（秒）
+  time_interval: 1.0
+
 # 导航与到达判定参数
 navigation:
   # 最终到达目标点的水平判定半径（米）
