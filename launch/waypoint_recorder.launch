@@ -1,6 +1,7 @@
 <launch>
   <!-- 话题与坐标系 -->
-  <arg name="odom_topic" default="/odin1/odometry" />
+  <!-- <arg name="odom_topic" default="/odin1/odometry" /> -->
+  <arg name="odom_topic" default="/lio/odom" />
   <arg name="point_goal_topic" default="/way_point" />
   <arg name="publish_point_goal" default="true" />
   <arg name="pose_goal_topic" default="/move_base_simple/goal" />
@@ -12,8 +13,8 @@
 
   <!-- 自动录制：间隔必须为有限正数，结束时始终补录终点 -->
   <arg name="record_start_point" default="false" />
-  <arg name="distance_interval" default="3.0" /> <!-- 累计三维路程，米 -->
-  <arg name="time_interval" default="3.0" /> <!-- ROS 时间，秒 -->
+  <arg name="distance_interval" default="5.0" /> <!-- 累计三维路程，米 -->
+  <arg name="time_interval" default="5.0" /> <!-- ROS 时间，秒 -->
 
   <!-- 导航与到达判定 -->
   <arg name="arrival_radius" default="0.5" /> <!-- 水平到达半径，米 -->
@@ -22,7 +23,7 @@
   <arg name="early_switch_radius" default="1.2" /> <!-- 提前切换半径，需大于 arrival_radius -->
   <arg name="wait_time" default="0.0" /> <!-- 到达后等待，秒 -->
   <arg name="loop_navigation" default="false" />
-  <arg name="control_rate" default="20.0" /> <!-- 主循环频率，Hz -->
+  <arg name="control_rate" default="50.0" /> <!-- 主循环频率，Hz -->
 
   <!-- 核心节点与交互控制台共用通信话题 -->
   <arg name="command_topic" default="/waypoint_recorder/command" />
