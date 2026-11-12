@@ -17,7 +17,7 @@
   <arg name="time_interval" default="5.0" /> <!-- ROS 时间，秒 -->
 
   <!-- 导航与到达判定 -->
-  <arg name="arrival_radius" default="0.5" /> <!-- 水平到达半径，米 -->
+  <arg name="arrival_radius" default="0.8" /> <!-- 水平到达半径，米 -->
   <arg name="z_bound" default="2.0" /> <!-- 垂直容差，米 -->
   <arg name="enable_early_switch" default="false" />
   <arg name="early_switch_radius" default="1.2" /> <!-- 提前切换半径，需大于 arrival_radius -->
