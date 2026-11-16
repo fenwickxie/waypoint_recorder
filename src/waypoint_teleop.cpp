@@ -1,4 +1,5 @@
 #include <iostream>
+#include <cctype>
 #include <string>
 #include <termios.h>
 #include <unistd.h>
@@ -39,7 +40,8 @@ private:
 class WaypointTeleop {
 public:
   WaypointTeleop(ros::NodeHandle& nh, ros::NodeHandle& pnh)
-      : nh_(nh), pnh_(pnh), last_status_("WAITING"), awaiting_save_format_(false) {
+      : nh_(nh), pnh_(pnh), last_status_("WAITING"), awaiting_save_format_(false),
+        awaiting_start_index_(false) {
     pnh_.param<std::string>("command_topic", command_topic_, "/waypoint_recorder/command");
     pnh_.param<std::string>("status_topic", status_topic_, "/waypoint_recorder/status");
     pnh_.param<std::string>("default_file_path", default_file_path_, "");
@@ -99,6 +101,7 @@ public:
     std::cout << "  [f] : 开始按时间间隔自动录制 (Record by time)\n";
     std::cout << "  [e] : 结束自动录制并补录终点 (End recording)\n";
     std::cout << "  [p] : 开始自动连续发布航点 (Start navigation)\n";
+    std::cout << "  [n] : 输入航点序号，从该点开始发布后续航点 (Start from waypoint)\n";
     std::cout << "  [b] : 暂停导航发布 (Pause; resumable)\n";
     std::cout << "  [g] : 从暂停位置继续导航 (Continue / Resume)\n";
     std::cout << "  [s] : 彻底停止导航并从首个航点重新开始 (Stop / Reset)\n";
@@ -112,7 +115,8 @@ public:
     std::cout << "  [q] : 退出交互控制台 (Quit)\n";
     std::cout << "===============================================================\n";
     std::cout << "默认保存/读取路径: " << (default_file_path_.empty() ? "系统默认" : default_file_path_) << "\n";
-    std::cout << "按键即刻生效，无需按回车；保存时按 y/p/a 选择 YAML/PLY/全部，x 取消。\n\n";
+    std::cout << "按键即刻生效，无需按回车；序号从 1 开始。输入序号时按回车确认、x 取消。\n";
+    std::cout << "保存时按 y/p/a 选择 YAML/PLY/全部，x 取消。\n\n";
   }
 
   void run() {
@@ -124,6 +128,12 @@ public:
       char key = term.readKey();
 
       if (key != 0) {
+        if (awaiting_start_index_) {
+          handleStartIndexKey(key);
+          rate.sleep();
+          continue;
+        }
+
         if (awaiting_save_format_) {
           handleSaveFormatKey(key);
           rate.sleep();
@@ -140,6 +150,13 @@ public:
           case 'P':
             std::cout << ">> [START] 开始自动连续发布目标点...\n";
             sendCommand("START");
+            break;
+          case 'n':
+          case 'N':
+            start_index_input_.clear();
+            awaiting_start_index_ = true;
+            std::cout << ">> 输入起始航点序号（从 1 开始，回车确认，x 取消）: ";
+            std::cout.flush();
             break;
           case 'd':
           case 'D':
@@ -219,6 +236,39 @@ public:
   }
 
 private:
+  void handleStartIndexKey(char key) {
+    if (key == '\r' || key == '\n') {
+      awaiting_start_index_ = false;
+      if (start_index_input_.empty()) {
+        std::cout << "\n未输入序号，已取消。\n";
+        return;
+      }
+      std::cout << "\n>> [START_FROM] 从航点 " << start_index_input_ << " 开始发布...\n";
+      sendCommand("START_FROM:" + start_index_input_);
+      start_index_input_.clear();
+      return;
+    }
+    if (key == 'x' || key == 'X' || key == 27) {
+      awaiting_start_index_ = false;
+      start_index_input_.clear();
+      std::cout << "\n已取消。\n";
+      return;
+    }
+    if (key == 8 || key == 127) {
+      if (!start_index_input_.empty()) {
+        start_index_input_.pop_back();
+        std::cout << "\b \b";
+        std::cout.flush();
+      }
+      return;
+    }
+    if (std::isdigit(static_cast<unsigned char>(key))) {
+      start_index_input_.push_back(key);
+      std::cout << key;
+      std::cout.flush();
+    }
+  }
+
   void handleSaveFormatKey(char key) {
     awaiting_save_format_ = false;
     switch (key) {
@@ -260,6 +310,8 @@ private:
   std::string default_file_path_;
   std::string last_status_;
   bool awaiting_save_format_;
+  bool awaiting_start_index_;
+  std::string start_index_input_;
 };
 
 int main(int argc, char** argv) {

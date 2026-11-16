@@ -290,6 +290,35 @@ TEST_F(RecordingTest, StopNavigationPublishesZeroSpeed) {
   command("STOP");
 }
 
+TEST_F(RecordingTest, StartsFromSelectedOneBasedWaypointAndContinuesInOrder) {
+  pose(10.0);
+  command("RECORD");
+  pose(20.0);
+  command("RECORD");
+  pose(30.0);
+  command("RECORD");
+  ASSERT_TRUE(expectCount(3));
+
+  command("START_FROM:0");
+  EXPECT_NE(std::string::npos, status_.find("STATE:IDLE"));
+  command("START_FROM:4");
+  EXPECT_NE(std::string::npos, status_.find("STATE:IDLE"));
+
+  pose(0.0);
+  command("START_FROM:2");
+  ASSERT_TRUE(waitFor([&] {
+    return status_.find("STATE:NAVIGATING") != std::string::npos &&
+           status_.find("|CURRENT:2|") != std::string::npos;
+  }));
+  pose(20.0);
+  ASSERT_TRUE(waitFor([&] {
+    return status_.find("STATE:NAVIGATING") != std::string::npos &&
+           status_.find("|CURRENT:3|") != std::string::npos;
+  }));
+  pose(30.0);
+  EXPECT_TRUE(waitFor([&] { return status_.find("STATE:COMPLETED") != std::string::npos; }));
+}
+
 TEST_F(RecordingTest, InvalidOdometryDoesNotPolluteDistanceOrEndpoint) {
   pose(0.0);
   command("RECORD_DISTANCE");

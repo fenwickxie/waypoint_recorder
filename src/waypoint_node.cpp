@@ -378,6 +378,16 @@ private:
       stopRecording();
     } else if (cmd == "START" || cmd == "PLAY") {
       startNavigation();
+    } else if (cmd.find("START_FROM:") == 0) {
+      std::istringstream index_stream(cmd.substr(11));
+      size_t waypoint_number = 0;
+      char trailing_character = 0;
+      if (!(index_stream >> waypoint_number) || (index_stream >> trailing_character) ||
+          waypoint_number == 0) {
+        ROS_WARN("[WaypointNode] Invalid START_FROM index. Use a 1-based positive waypoint number.");
+        return;
+      }
+      startNavigationFromIndex(waypoint_number - 1);
     } else if (cmd == "PAUSE") {
       pauseNavigation();
     } else if (cmd == "CONTINUE" || cmd == "RESUME") {
@@ -531,6 +541,11 @@ private:
       ROS_WARN("[WaypointNode] Navigation is paused. Use CONTINUE to resume or STOP to reset.");
       return;
     }
+    const size_t start_idx = state_ == NavState::COMPLETED ? 0 : current_idx_;
+    startNavigationFromIndex(start_idx);
+  }
+
+  void startNavigationFromIndex(size_t start_idx) {
     if (recording_mode_ != RecordingMode::OFF) {
       ROS_WARN("[WaypointNode] Stop recording before starting navigation.");
       return;
@@ -539,9 +554,16 @@ private:
       ROS_WARN("[WaypointNode] Cannot start navigation: Waypoint list is empty!");
       return;
     }
-    if (state_ == NavState::COMPLETED) {
-      current_idx_ = 0;
+    if (start_idx >= manager_.size()) {
+      ROS_WARN("[WaypointNode] Cannot start navigation: waypoint index %zu is outside [1, %zu].",
+               start_idx + 1, manager_.size());
+      return;
     }
+    if (!has_odom_) {
+      ROS_WARN("[WaypointNode] Cannot start navigation: No odometry received yet!");
+      return;
+    }
+    current_idx_ = start_idx;
     state_ = NavState::NAVIGATING;
     is_waiting_ = false;
     ROS_INFO("[WaypointNode] Starting navigation from WP %d / %zu",
