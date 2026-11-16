@@ -7,8 +7,11 @@
 #include <unistd.h>
 
 #include <gtest/gtest.h>
+#include <dynamic_reconfigure/DoubleParameter.h>
+#include <dynamic_reconfigure/Reconfigure.h>
 #include <nav_msgs/Odometry.h>
 #include <ros/ros.h>
+#include <std_msgs/Float32.h>
 #include <std_msgs/String.h>
 #include <visualization_msgs/MarkerArray.h>
 #include "waypoint_recorder/waypoint_manager.h"
@@ -20,6 +23,7 @@ protected:
     odometry_ = nh_.advertise<nav_msgs::Odometry>(topic_prefix_ + "/odom", 10);
     status_sub_ = nh_.subscribe(topic_prefix_ + "/status", 10, &RecordingTest::statusCallback, this);
     marker_sub_ = nh_.subscribe(topic_prefix_ + "/markers", 10, &RecordingTest::markerCallback, this);
+    speed_sub_ = nh_.subscribe(topic_prefix_ + "/speed", 10, &RecordingTest::speedCallback, this);
     ASSERT_TRUE(waitFor([&] {
       return commands_.getNumSubscribers() > 0 && odometry_.getNumSubscribers() > 0 &&
              !status_.empty();
@@ -84,13 +88,18 @@ protected:
     }
   }
 
+  void speedCallback(const std_msgs::Float32::ConstPtr& message) {
+    last_speed_ = message->data;
+  }
+
   ros::NodeHandle nh_;
   ros::Publisher commands_, odometry_;
-  ros::Subscriber status_sub_, marker_sub_;
+  ros::Subscriber status_sub_, marker_sub_, speed_sub_;
   std::string topic_prefix_ = "/recording_test";
   std::string status_;
   std::string temporary_file_;
   std::vector<geometry_msgs::Point> points_;
+  float last_speed_ = std::numeric_limits<float>::quiet_NaN();
 };
 
 TEST_F(RecordingTest, RejectsMissingOdometryAndInvalidIntervals) {
@@ -233,6 +242,33 @@ TEST_F(RecordingTest, ManualRecordAndNavigationStopKeepOriginalMeaning) {
   EXPECT_TRUE(expectCount(4));
   command("STOP_RECORDING");
   EXPECT_TRUE(expectCount(5));
+}
+
+TEST_F(RecordingTest, StopNavigationPublishesZeroSpeed) {
+  pose(0.0);
+  pose(5.0);
+  command("RECORD");
+  ASSERT_TRUE(expectCount(1));
+  pose(0.0);
+
+  ASSERT_TRUE(ros::service::waitForService(
+      "/recorder_test_node/set_parameters", ros::Duration(2.0)));
+  dynamic_reconfigure::Reconfigure reconfigure;
+  dynamic_reconfigure::DoubleParameter speed_value;
+  speed_value.name = "speedValue";
+  speed_value.value = 3.25;
+  reconfigure.request.config.doubles.push_back(speed_value);
+  ASSERT_TRUE(ros::service::call("/recorder_test_node/set_parameters", reconfigure));
+
+  command("START");
+  ASSERT_TRUE(waitFor([&] {
+    return status_.find("STATE:NAVIGATING") != std::string::npos &&
+           std::abs(last_speed_ - 3.25f) < 0.001f;
+  }));
+
+  command("STOP");
+  EXPECT_NE(std::string::npos, status_.find("STATE:PAUSED"));
+  EXPECT_TRUE(waitFor([&] { return last_speed_ == 0.0f; }));
 }
 
 TEST_F(RecordingTest, InvalidOdometryDoesNotPolluteDistanceOrEndpoint) {

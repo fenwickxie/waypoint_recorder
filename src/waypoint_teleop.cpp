@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <ros/ros.h>
+#include <dynamic_reconfigure/Config.h>
 #include <std_msgs/String.h>
 
 class TerminalController {
@@ -42,15 +43,45 @@ public:
     pnh_.param<std::string>("command_topic", command_topic_, "/waypoint_recorder/command");
     pnh_.param<std::string>("status_topic", status_topic_, "/waypoint_recorder/status");
     pnh_.param<std::string>("default_file_path", default_file_path_, "");
+    pnh_.param<std::string>("dynamic_config_topic", dynamic_config_topic_,
+                            "/waypoint_node/parameter_updates");
 
     pub_cmd_ = nh_.advertise<std_msgs::String>(command_topic_, 10);
     sub_status_ = nh_.subscribe<std_msgs::String>(status_topic_, 10, &WaypointTeleop::statusCallback, this);
+    sub_dynamic_config_ = nh_.subscribe<dynamic_reconfigure::Config>(
+        dynamic_config_topic_, 1, &WaypointTeleop::dynamicConfigCallback, this);
 
     printHelp();
   }
 
   void statusCallback(const std_msgs::String::ConstPtr& msg) {
     last_status_ = msg->data;
+  }
+
+  void dynamicConfigCallback(const dynamic_reconfigure::Config::ConstPtr& msg) {
+    std::string updated_command_topic = command_topic_;
+    std::string updated_status_topic = status_topic_;
+    for (const auto& parameter : msg->strs) {
+      if (parameter.name == "commandTopic") {
+        updated_command_topic = parameter.value;
+      } else if (parameter.name == "statusTopic") {
+        updated_status_topic = parameter.value;
+      } else if (parameter.name == "defaultFilePath") {
+        default_file_path_ = parameter.value;
+      }
+    }
+
+    if (updated_command_topic != command_topic_) {
+      pub_cmd_.shutdown();
+      command_topic_ = updated_command_topic;
+      pub_cmd_ = nh_.advertise<std_msgs::String>(command_topic_, 10);
+    }
+    if (updated_status_topic != status_topic_) {
+      sub_status_.shutdown();
+      status_topic_ = updated_status_topic;
+      sub_status_ = nh_.subscribe<std_msgs::String>(
+          status_topic_, 10, &WaypointTeleop::statusCallback, this);
+    }
   }
 
   void sendCommand(const std::string& cmd) {
@@ -209,9 +240,11 @@ private:
   ros::NodeHandle pnh_;
   ros::Publisher pub_cmd_;
   ros::Subscriber sub_status_;
+  ros::Subscriber sub_dynamic_config_;
 
   std::string command_topic_;
   std::string status_topic_;
+  std::string dynamic_config_topic_;
   std::string default_file_path_;
   std::string last_status_;
   bool awaiting_save_format_;

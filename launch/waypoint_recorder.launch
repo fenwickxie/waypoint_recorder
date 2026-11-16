@@ -29,6 +29,7 @@
   <arg name="command_topic" default="/waypoint_recorder/command" />
   <arg name="status_topic" default="/waypoint_recorder/status" />
   <arg name="marker_topic" default="/waypoint_recorder/markers" />
+  <arg name="dynamic_config_topic" default="/waypoint_node/parameter_updates" />
 
   <!-- 航点文件持久化默认存储路径 -->
   <arg name="waypoint_file" default="$(find waypoint_recorder)/saved_waypoints/waypoints.yaml" />
@@ -64,6 +65,7 @@
     <param name="control/status_topic" type="str" value="$(arg status_topic)" />
     <param name="control/marker_topic" type="str" value="$(arg marker_topic)" />
     <param name="storage/default_file_path" type="str" value="$(arg waypoint_file)" />
+    <param name="dynamic_config_topic" type="str" value="$(arg dynamic_config_topic)" />
   </node>
 
   <!-- 专用终端交互控制台 (新窗口运行模式) -->
@@ -73,6 +75,7 @@
       <param name="command_topic" type="str" value="$(arg command_topic)" />
       <param name="status_topic" type="str" value="$(arg status_topic)" />
       <param name="default_file_path" type="str" value="$(arg waypoint_file)" />
+      <param name="dynamic_config_topic" type="str" value="$(arg dynamic_config_topic)" />
     </node>
   </group>
 
@@ -83,6 +86,7 @@
       <param name="command_topic" type="str" value="$(arg command_topic)" />
       <param name="status_topic" type="str" value="$(arg status_topic)" />
       <param name="default_file_path" type="str" value="$(arg waypoint_file)" />
+      <param name="dynamic_config_topic" type="str" value="$(arg dynamic_config_topic)" />
     </node>
   </group>
 </launch>

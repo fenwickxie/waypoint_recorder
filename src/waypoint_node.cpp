@@ -3,8 +3,10 @@
 #include <vector>
 #include <memory>
 #include <sstream>
+#include <boost/thread/recursive_mutex.hpp>
 
 #include <ros/ros.h>
+#include <ros/names.h>
 #include <nav_msgs/Odometry.h>
 #include <geometry_msgs/PointStamped.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -13,9 +15,11 @@
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <tf/transform_datatypes.h>
+#include <dynamic_reconfigure/server.h>
 
 #include "waypoint_recorder/waypoint_types.h"
 #include "waypoint_recorder/waypoint_manager.h"
+#include "waypoint_recorder/WaypointRecorderConfig.h"
 
 namespace waypoint_recorder {
 
@@ -28,6 +32,7 @@ public:
         last_odom_time_(0.0) {
     loadParameters();
     setupROS();
+    setupDynamicReconfigure();
     ROS_INFO("[WaypointNode] Initialized successfully. Waiting for commands and odometry...");
   }
 
@@ -174,6 +179,168 @@ private:
     pub_status_ = nh_.advertise<std_msgs::String>(status_topic_, 5);
   }
 
+  void setupDynamicReconfigure() {
+    WaypointRecorderConfig config;
+    config.odomTopic = odom_topic_;
+    config.pointGoalTopic = point_goal_topic_;
+    config.publishPointGoal = publish_point_goal_;
+    config.poseGoalTopic = pose_goal_topic_;
+    config.publishPoseGoal = publish_pose_goal_;
+    config.speedTopic = speed_topic_;
+    config.publishSpeed = publish_speed_;
+    config.speedValue = speed_value_;
+    config.frameId = frame_id_;
+    config.arrivalRadius = arrival_radius_;
+    config.zBound = z_bound_;
+    config.enableEarlySwitch = enable_early_switch_;
+    config.earlySwitchRadius = early_switch_radius_;
+    config.waitTime = wait_time_;
+    config.loopNavigation = loop_navigation_;
+    config.controlRate = control_rate_;
+    config.distanceInterval = distance_interval_;
+    config.timeInterval = time_interval_;
+    config.recordStartPoint = record_start_point_;
+    config.commandTopic = command_topic_;
+    config.statusTopic = status_topic_;
+    config.markerTopic = marker_topic_;
+    config.defaultFilePath = default_file_path_;
+    current_config_ = config;
+
+    reconfigure_server_.reset(
+        new dynamic_reconfigure::Server<WaypointRecorderConfig>(reconfigure_mutex_, pnh_));
+    reconfigure_server_->updateConfig(config);
+    reconfigure_server_->setCallback(
+        [this](WaypointRecorderConfig& updated_config, uint32_t) {
+          reconfigureCallback(updated_config);
+        });
+  }
+
+  bool validTopic(const std::string& topic) const {
+    std::string error;
+    return !topic.empty() && ros::names::validate(topic, error);
+  }
+
+  void reconfigureCallback(WaypointRecorderConfig& config) {
+    if (!validTopic(config.odomTopic) || !validTopic(config.pointGoalTopic) ||
+        !validTopic(config.poseGoalTopic) || !validTopic(config.speedTopic) ||
+        !validTopic(config.commandTopic) || !validTopic(config.statusTopic) ||
+        !validTopic(config.markerTopic)) {
+      ROS_ERROR("[WaypointNode] Dynamic reconfigure rejected an empty or invalid topic name.");
+      config.odomTopic = odom_topic_;
+      config.pointGoalTopic = point_goal_topic_;
+      config.poseGoalTopic = pose_goal_topic_;
+      config.speedTopic = speed_topic_;
+      config.commandTopic = command_topic_;
+      config.statusTopic = status_topic_;
+      config.markerTopic = marker_topic_;
+    }
+    if (config.frameId.empty()) {
+      ROS_ERROR("[WaypointNode] Dynamic reconfigure rejected an empty frame_id.");
+      config.frameId = frame_id_;
+    }
+    if (config.earlySwitchRadius < config.arrivalRadius) {
+      ROS_WARN("[WaypointNode] early_switch_radius is below arrival_radius; raising it to arrival_radius.");
+      config.earlySwitchRadius = config.arrivalRadius;
+    }
+
+    const bool odom_changed = config.odomTopic != odom_topic_;
+    const bool command_changed = config.commandTopic != command_topic_;
+    const bool point_goal_changed = config.pointGoalTopic != point_goal_topic_ ||
+                                    config.publishPointGoal != publish_point_goal_;
+    const bool pose_goal_changed = config.poseGoalTopic != pose_goal_topic_ ||
+                                   config.publishPoseGoal != publish_pose_goal_;
+    const bool speed_topic_changed = config.speedTopic != speed_topic_;
+    const bool speed_changed = speed_topic_changed || config.publishSpeed != publish_speed_ ||
+                               config.speedValue != speed_value_;
+    const bool marker_changed = config.markerTopic != marker_topic_;
+    const bool status_changed = config.statusTopic != status_topic_;
+    const bool goal_changed = point_goal_changed || pose_goal_changed || speed_changed ||
+                              config.frameId != frame_id_;
+
+    const bool output_disabled = (publish_point_goal_ && !config.publishPointGoal) ||
+                                 (publish_pose_goal_ && !config.publishPoseGoal);
+    const bool navigation_io_changed = odom_changed ||
+        config.pointGoalTopic != point_goal_topic_ || config.poseGoalTopic != pose_goal_topic_ ||
+        speed_topic_changed || (publish_speed_ && !config.publishSpeed) || output_disabled;
+    if (state_ == NavState::NAVIGATING && navigation_io_changed) {
+      publishZeroSpeed();
+      state_ = NavState::PAUSED;
+      is_waiting_ = false;
+      ROS_WARN("[WaypointNode] Navigation paused because live I/O settings changed. Send START to resume.");
+    }
+
+    odom_topic_ = config.odomTopic;
+    point_goal_topic_ = config.pointGoalTopic;
+    publish_point_goal_ = config.publishPointGoal;
+    pose_goal_topic_ = config.poseGoalTopic;
+    publish_pose_goal_ = config.publishPoseGoal;
+    speed_topic_ = config.speedTopic;
+    publish_speed_ = config.publishSpeed;
+    speed_value_ = config.speedValue;
+    frame_id_ = config.frameId;
+    arrival_radius_ = config.arrivalRadius;
+    z_bound_ = config.zBound;
+    enable_early_switch_ = config.enableEarlySwitch;
+    early_switch_radius_ = config.earlySwitchRadius;
+    wait_time_ = config.waitTime;
+    loop_navigation_ = config.loopNavigation;
+    control_rate_ = config.controlRate;
+    distance_interval_ = config.distanceInterval;
+    time_interval_ = config.timeInterval;
+    record_start_point_ = config.recordStartPoint;
+    command_topic_ = config.commandTopic;
+    status_topic_ = config.statusTopic;
+    marker_topic_ = config.markerTopic;
+    default_file_path_ = config.defaultFilePath;
+
+    if (odom_changed) {
+      sub_odom_.shutdown();
+      has_odom_ = false;
+      sub_odom_ = nh_.subscribe<nav_msgs::Odometry>(odom_topic_, 10, &WaypointNode::odomCallback, this);
+    }
+    if (command_changed) {
+      sub_cmd_.shutdown();
+      sub_cmd_ = nh_.subscribe<std_msgs::String>(command_topic_, 10, &WaypointNode::commandCallback, this);
+    }
+    if (point_goal_changed) {
+      pub_point_goal_.shutdown();
+      if (publish_point_goal_) {
+        pub_point_goal_ = nh_.advertise<geometry_msgs::PointStamped>(point_goal_topic_, 5);
+      }
+    }
+    if (pose_goal_changed) {
+      pub_pose_goal_.shutdown();
+      if (publish_pose_goal_) {
+        pub_pose_goal_ = nh_.advertise<geometry_msgs::PoseStamped>(pose_goal_topic_, 5);
+      }
+    }
+    if (speed_changed) {
+      pub_speed_.shutdown();
+      if (publish_speed_) {
+        pub_speed_ = nh_.advertise<std_msgs::Float32>(speed_topic_, 5);
+      }
+    }
+    if (marker_changed) {
+      pub_markers_.shutdown();
+      pub_markers_ = nh_.advertise<visualization_msgs::MarkerArray>(marker_topic_, 5);
+    }
+    if (status_changed) {
+      pub_status_.shutdown();
+      pub_status_ = nh_.advertise<std_msgs::String>(status_topic_, 5);
+    }
+    if (state_ == NavState::NAVIGATING && goal_changed) {
+      publishCurrentGoal();
+    }
+    current_config_ = config;
+  }
+
+  void publishZeroSpeed() {
+    if (!publish_speed_) return;
+    std_msgs::Float32 stop_msg;
+    stop_msg.data = 0.0f;
+    pub_speed_.publish(stop_msg);
+  }
+
   void odomCallback(const nav_msgs::Odometry::ConstPtr& msg) {
     const auto& position = msg->pose.pose.position;
     const double yaw = tf::getYaw(msg->pose.pose.orientation);
@@ -219,6 +386,10 @@ private:
       undoWaypoint();
     } else if (cmd == "TOGGLE_EARLY_SWITCH") {
       enable_early_switch_ = !enable_early_switch_;
+      current_config_.enableEarlySwitch = enable_early_switch_;
+      if (reconfigure_server_) {
+        reconfigure_server_->updateConfig(current_config_);
+      }
       ROS_INFO_STREAM("[WaypointNode] Early switch is now: " << (enable_early_switch_ ? "ENABLED" : "DISABLED"));
     } else if (cmd.find("SAVE_FORMAT:") == 0) {
       saveWaypointsInFormat(cmd.substr(12));
@@ -371,6 +542,9 @@ private:
   }
 
   void pauseNavigation() {
+    if (state_ == NavState::NAVIGATING) {
+      publishZeroSpeed();
+    }
     state_ = NavState::PAUSED;
     ROS_INFO("[WaypointNode] Navigation paused.");
   }
@@ -576,6 +750,9 @@ private:
   ros::Publisher pub_speed_;
   ros::Publisher pub_markers_;
   ros::Publisher pub_status_;
+  boost::recursive_mutex reconfigure_mutex_;
+  std::unique_ptr<dynamic_reconfigure::Server<WaypointRecorderConfig>> reconfigure_server_;
+  WaypointRecorderConfig current_config_;
 
   WaypointManager manager_;
   size_t current_idx_;
@@ -630,11 +807,16 @@ int main(int argc, char** argv) {
   ros::NodeHandle pnh("~");
 
   waypoint_recorder::WaypointNode node(nh, pnh);
-  ros::Rate rate(node.getControlRate());
+  double control_rate = node.getControlRate();
+  ros::Rate rate(control_rate);
 
   while (ros::ok()) {
     ros::spinOnce();
     node.update();
+    if (node.getControlRate() != control_rate) {
+      control_rate = node.getControlRate();
+      rate = ros::Rate(control_rate);
+    }
     rate.sleep();
   }
 
