@@ -98,8 +98,10 @@ public:
     std::cout << "  [d] : 开始按行驶距离自动录制 (Record by distance)\n";
     std::cout << "  [f] : 开始按时间间隔自动录制 (Record by time)\n";
     std::cout << "  [e] : 结束自动录制并补录终点 (End recording)\n";
-    std::cout << "  [p] : 开始自动连续发布航点 (Play / Start navigation)\n";
-    std::cout << "  [s] : 暂停/停止当前自动发布 (Stop / Pause navigation)\n";
+    std::cout << "  [p] : 开始自动连续发布航点 (Start navigation)\n";
+    std::cout << "  [b] : 暂停导航发布 (Pause; resumable)\n";
+    std::cout << "  [g] : 从暂停位置继续导航 (Continue / Resume)\n";
+    std::cout << "  [s] : 彻底停止导航并从首个航点重新开始 (Stop / Reset)\n";
     std::cout << "  [u] : 撤销上一个航点 (Undo last waypoint)\n";
     std::cout << "  [c] : 清空所有录制的航点 (Clear all waypoints)\n";
     std::cout << "  [t] : 开关提前发布顺滑切换 (Toggle smooth early-switch)\n";
@@ -156,8 +158,18 @@ public:
             break;
           case 's':
           case 'S':
-            std::cout << ">> [STOP] 暂停/停止航点发布...\n";
+            std::cout << ">> [STOP] 彻底停止导航并重置到首个航点...\n";
             sendCommand("STOP");
+            break;
+          case 'b':
+          case 'B':
+            std::cout << ">> [PAUSE] 暂停导航发布，可按 g 继续...\n";
+            sendCommand("PAUSE");
+            break;
+          case 'g':
+          case 'G':
+            std::cout << ">> [CONTINUE] 从暂停位置继续导航...\n";
+            sendCommand("CONTINUE");
             break;
           case 'u':
           case 'U':

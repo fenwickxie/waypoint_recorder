@@ -266,9 +266,28 @@ TEST_F(RecordingTest, StopNavigationPublishesZeroSpeed) {
            std::abs(last_speed_ - 3.25f) < 0.001f;
   }));
 
-  command("STOP");
+  command("PAUSE");
   EXPECT_NE(std::string::npos, status_.find("STATE:PAUSED"));
+  EXPECT_NE(std::string::npos, status_.find("|CURRENT:1|"));
   EXPECT_TRUE(waitFor([&] { return last_speed_ == 0.0f; }));
+
+  command("CONTINUE");
+  ASSERT_TRUE(waitFor([&] {
+    return status_.find("STATE:NAVIGATING") != std::string::npos &&
+           std::abs(last_speed_ - 3.25f) < 0.001f;
+  }));
+
+  command("STOP");
+  EXPECT_NE(std::string::npos, status_.find("STATE:IDLE"));
+  EXPECT_NE(std::string::npos, status_.find("|CURRENT:1|"));
+  EXPECT_TRUE(waitFor([&] { return last_speed_ == 0.0f; }));
+
+  command("START");
+  ASSERT_TRUE(waitFor([&] {
+    return status_.find("STATE:NAVIGATING") != std::string::npos &&
+           std::abs(last_speed_ - 3.25f) < 0.001f;
+  }));
+  command("STOP");
 }
 
 TEST_F(RecordingTest, InvalidOdometryDoesNotPolluteDistanceOrEndpoint) {

@@ -378,8 +378,12 @@ private:
       stopRecording();
     } else if (cmd == "START" || cmd == "PLAY") {
       startNavigation();
-    } else if (cmd == "STOP" || cmd == "PAUSE") {
+    } else if (cmd == "PAUSE") {
       pauseNavigation();
+    } else if (cmd == "CONTINUE" || cmd == "RESUME") {
+      continueNavigation();
+    } else if (cmd == "STOP") {
+      stopNavigation();
     } else if (cmd == "CLEAR") {
       clearWaypoints();
     } else if (cmd == "UNDO") {
@@ -523,6 +527,10 @@ private:
   }
 
   void startNavigation() {
+    if (state_ == NavState::PAUSED) {
+      ROS_WARN("[WaypointNode] Navigation is paused. Use CONTINUE to resume or STOP to reset.");
+      return;
+    }
     if (recording_mode_ != RecordingMode::OFF) {
       ROS_WARN("[WaypointNode] Stop recording before starting navigation.");
       return;
@@ -542,11 +550,51 @@ private:
   }
 
   void pauseNavigation() {
-    if (state_ == NavState::NAVIGATING) {
-      publishZeroSpeed();
+    if (state_ != NavState::NAVIGATING) {
+      ROS_WARN("[WaypointNode] Navigation is not running; nothing to pause.");
+      return;
     }
     state_ = NavState::PAUSED;
-    ROS_INFO("[WaypointNode] Navigation paused.");
+    is_waiting_ = false;
+    publishZeroSpeed();
+    ROS_INFO("[WaypointNode] Navigation paused at the current waypoint.");
+  }
+
+  void continueNavigation() {
+    if (state_ != NavState::PAUSED) {
+      ROS_WARN("[WaypointNode] Navigation is not paused; nothing to continue.");
+      return;
+    }
+    if (recording_mode_ != RecordingMode::OFF) {
+      ROS_WARN("[WaypointNode] Stop recording before continuing navigation.");
+      return;
+    }
+    if (manager_.empty() || current_idx_ >= manager_.size()) {
+      ROS_WARN("[WaypointNode] Cannot continue navigation: current waypoint is unavailable.");
+      stopNavigation();
+      return;
+    }
+    if (!has_odom_) {
+      ROS_WARN("[WaypointNode] Cannot continue navigation: No odometry received yet!");
+      return;
+    }
+    state_ = NavState::NAVIGATING;
+    is_waiting_ = false;
+    ROS_INFO("[WaypointNode] Continuing navigation from WP %d / %zu",
+             static_cast<int>(current_idx_ + 1), manager_.size());
+    publishCurrentGoal();
+  }
+
+  void stopNavigation() {
+    const bool was_active = state_ == NavState::NAVIGATING || state_ == NavState::PAUSED;
+    if (was_active) {
+      publishZeroSpeed();
+    }
+    state_ = NavState::IDLE;
+    current_idx_ = 0;
+    is_waiting_ = false;
+    wait_start_time_ = 0.0;
+    ROS_INFO("[WaypointNode] Navigation stopped; next start will begin at WP 1.");
   }
 
   void clearWaypoints() {
